@@ -1,6 +1,7 @@
 
 #define FASTLED_ESP32_I2S
 #include <FastLED.h>
+#include <type_traits>
 #include "WiFi.h"
 #include "AsyncUDP.h"
 #include <PubSubClient.h>
@@ -8,14 +9,14 @@
 
 // CONFIGURATION DEFINES
 
-#define WIFI_SSID "BYTE_ME"
-#define WIFI_PASS "ancientcoconut426"
+#define WIFI_SSID "YOUR_WIFI_NAME"
+#define WIFI_PASS "YOUR_WIFI_PASS"
 
 // Leave MQTT_HOST empty for the original automatic Art-Net behavior.
-constexpr char MQTT_HOST[] = ""; // Home Assistant / Mosquitto LAN address
+constexpr char MQTT_HOST[] = "YOUR_HUB_IP"; // Home Assistant / Mosquitto LAN address
 constexpr uint16_t MQTT_PORT = 1883;
-constexpr char MQTT_USER[] = "";
-constexpr char MQTT_PASSWORD[] = "";
+constexpr char MQTT_USER[] = "YOUR_HUB_ACCESS_USER";
+constexpr char MQTT_PASSWORD[] = "HUB_ACCESS_PASSWORD";
 constexpr bool MQTT_ENABLED = MQTT_HOST[0] != '\0';
 // Use the SweetLight computer's LAN IP to restrict Show Control to that sender.
 // 0.0.0.0 accepts any sender on the configured universe while Show Control is selected.
@@ -24,83 +25,59 @@ constexpr uint32_t SHOW_FRAME_TIMEOUT_MS = 1000;
 
 // Set a display name and assign a different Art-Net port-address to each device.
 // The hardware ID is derived from the factory MAC and survives a rename or DHCP change.
-constexpr char DEVICE_NAME[] = "led-harness";
+constexpr char DEVICE_NAME[] = "male-harness-v1";
 constexpr uint16_t ARTNET_UNIVERSE = 0; // Wire value, 0 through 32767
 constexpr uint16_t ARTNET_PORT = 6454;
 constexpr uint16_t CONTROL_PORT = 6455;
 static_assert(ARTNET_UNIVERSE <= 32767, "Invalid Art-Net port-address");
 
-//#define IS_MALE // comment out to make female
+#define IS_MALE // comment out to make female
 
 // only valid for males
-#define NUM_LEDS_TOP 35
-#define NUM_LEDS_BOTTOM 35
-#define NUM_LEDS_STRAP 50
+#define NUM_LEDS_TOP 28
+#define NUM_LEDS_BOTTOM 19
+#define NUM_LEDS_STRAP 41
 
 // only valid for females
-#define NUM_LEDS_SHOULDER 32
+#define NUM_LEDS_SHOULDER 25
 #define NUM_LEDS_BRA_IN 11
 #define NUM_LEDS_BRA_OUT 13
 #define NUM_LEDS_TOP_RIB 65
 #define NUM_LEDS_MIDDLE_RIB 58
 #define NUM_LEDS_BOTTOM_RIB 68
 
-// This sould be the biggest of the above strips.
-// REMBEMBER: shoulder + bra_in/out * 2 is a single strip
-// Technically, we could compute this... but it's a pain in the ass
-#define MAX_NUM_LEDS 68
-
-// END CONFIG
-
-
-
-
-#ifndef IS_MALE
-#define IS_FEMALE
-#endif
+// One row per output: slot alias, physical GPIO, male pixel count, female pixel count.
+// Set the active layout's count to 0 for any unwired output.
+// GPIO 1 and 3 are reserved for USB serial. Flash and input-only GPIOs are omitted.
+// GPIO 0, 2, 5, 12 and 15 are boot strapping pins. Keep unused rows at 0.
+#define LED_OUTPUTS(X) \
+  X(0, 14, NUM_LEDS_STRAP , (NUM_LEDS_SHOULDER + NUM_LEDS_BRA_IN  * 2)) \
+  X(1, 27, NUM_LEDS_TOP   , (NUM_LEDS_SHOULDER + NUM_LEDS_BRA_OUT * 2)) \
+  X(2, 26, NUM_LEDS_TOP   , 0) \
+  X(3, 25, NUM_LEDS_TOP   , (NUM_LEDS_SHOULDER + NUM_LEDS_BRA_OUT * 2)) \
+  X(4, 33, 0              , (NUM_LEDS_SHOULDER + NUM_LEDS_BRA_IN  * 2)) \
+  X(5, 32, 0              , 0) \
+  X(6, 15, 0              , NUM_LEDS_BOTTOM_RIB) \
+  X(7,  2, 0              , NUM_LEDS_BOTTOM_RIB) \
+  X(8,  4, 0              , NUM_LEDS_BOTTOM_RIB) \
+  X(9, 16, 0              , NUM_LEDS_MIDDLE_RIB) \
+  X(A, 17, 0              , NUM_LEDS_MIDDLE_RIB) \
+  X(B,  5, 0              , NUM_LEDS_MIDDLE_RIB) \
+  X(C, 18, NUM_LEDS_BOTTOM   , NUM_LEDS_TOP_RIB) \
+  X(D, 19, NUM_LEDS_BOTTOM   , NUM_LEDS_TOP_RIB) \
+  X(E, 21, NUM_LEDS_BOTTOM   , NUM_LEDS_TOP_RIB) \
+  X(F, 13, NUM_LEDS_STRAP , 0) \
+  X(G, 12, NUM_LEDS_STRAP , 0) \
+  X(H,  0, 0              , 0)
 
 #ifdef IS_MALE
+#define ACTIVE_COUNT(male, female) male
+#else
+#define ACTIVE_COUNT(male, female) female
+#endif
 
-#define NUM_LEDS_0 NUM_LEDS_BOTTOM
-#define NUM_LEDS_1 NUM_LEDS_BOTTOM
-#define NUM_LEDS_2 NUM_LEDS_BOTTOM
-#define NUM_LEDS_3 NUM_LEDS_TOP
-#define NUM_LEDS_4 NUM_LEDS_TOP
-#define NUM_LEDS_5 NUM_LEDS_TOP
-#define NUM_LEDS_6 0
-#define NUM_LEDS_7 0
-#define NUM_LEDS_8 0
-#define NUM_LEDS_9 NUM_LEDS_STRAP
-#define NUM_LEDS_A NUM_LEDS_STRAP
-#define NUM_LEDS_B NUM_LEDS_STRAP
-#define NUM_LEDS_C 0
-#define NUM_LEDS_D 0
-#define NUM_LEDS_E 0
-
-# else  // FEMALE
-
-#define NUM_LEDS_0 (NUM_LEDS_SHOULDER + NUM_LEDS_BRA_IN  * 2)
-#define NUM_LEDS_1 (NUM_LEDS_SHOULDER + NUM_LEDS_BRA_OUT * 2)
-#define NUM_LEDS_2 0
-#define NUM_LEDS_3 (NUM_LEDS_SHOULDER + NUM_LEDS_BRA_OUT * 2)
-#define NUM_LEDS_4 (NUM_LEDS_SHOULDER + NUM_LEDS_BRA_IN  * 2)
-#define NUM_LEDS_5 0
-#define NUM_LEDS_6 0
-#define NUM_LEDS_7 NUM_LEDS_TOP_RIB
-#define NUM_LEDS_8 NUM_LEDS_TOP_RIB
-#define NUM_LEDS_9 0
-#define NUM_LEDS_A NUM_LEDS_MIDDLE_RIB
-#define NUM_LEDS_B NUM_LEDS_MIDDLE_RIB
-#define NUM_LEDS_C 0
-#define NUM_LEDS_D NUM_LEDS_BOTTOM_RIB
-#define NUM_LEDS_E NUM_LEDS_BOTTOM_RIB
-
-#endif // Sex config
-
-// END CONFIG
-
-#define NUM_STRIPS 15
-//#define MAX_NUM_LEDS 128
+// Keep this at least as large as the longest enabled strip.
+constexpr int MAX_NUM_LEDS = 41;
 
 // The UDP callbacks run separately from the render loop.
 uint8_t received_colors[MAX_NUM_LEDS * 3];
@@ -335,76 +312,31 @@ void update_listeners(uint32_t now) {
   }
 }
 
-#define NUM_LEDS MAX_NUM_LEDS
+// Derive static buffers, slot count and registration from the same table.
+#define ALLOCATE_STRIP(slot, pin, male, female) \
+  static_assert(ACTIVE_COUNT(male, female) >= 0 && \
+                ACTIVE_COUNT(male, female) <= MAX_NUM_LEDS, \
+                "Check LED count and MAX_NUM_LEDS for slot " #slot); \
+  CRGB strip_##slot[ACTIVE_COUNT(male, female) > 0 ? ACTIVE_COUNT(male, female) : 1];
+LED_OUTPUTS(ALLOCATE_STRIP)
+#undef ALLOCATE_STRIP
 
-#define DATA_PIN_0 14
-#define DATA_PIN_1 27
-#define DATA_PIN_2 26
-#define DATA_PIN_3 25
-#define DATA_PIN_4 33
-#define DATA_PIN_5 32
-#define DATA_PIN_6 15
-#define DATA_PIN_7 2
-#define DATA_PIN_8 4
-#define DATA_PIN_9 16
-#define DATA_PIN_A 17
-#define DATA_PIN_B 5
-#define DATA_PIN_C 18
-#define DATA_PIN_D 19
-#define DATA_PIN_E 21
+#define STRIP_BUFFER(slot, pin, male, female) strip_##slot,
+CRGB* const leds[] = { LED_OUTPUTS(STRIP_BUFFER) };
+#undef STRIP_BUFFER
 
-// Dynamic allocation fails, so statically allocating these
-CRGB strip_0[NUM_LEDS_0 ? NUM_LEDS_0 : 1];
-CRGB strip_1[NUM_LEDS_1 ? NUM_LEDS_1 : 1];
-CRGB strip_2[NUM_LEDS_2 ? NUM_LEDS_2 : 1];
-CRGB strip_3[NUM_LEDS_3 ? NUM_LEDS_3 : 1];
-CRGB strip_4[NUM_LEDS_4 ? NUM_LEDS_4 : 1];
-CRGB strip_5[NUM_LEDS_5 ? NUM_LEDS_5 : 1];
-CRGB strip_6[NUM_LEDS_6 ? NUM_LEDS_6 : 1];
-CRGB strip_7[NUM_LEDS_7 ? NUM_LEDS_7 : 1];
-CRGB strip_8[NUM_LEDS_8 ? NUM_LEDS_8 : 1];
-CRGB strip_9[NUM_LEDS_9 ? NUM_LEDS_9 : 1];
-CRGB strip_a[NUM_LEDS_A ? NUM_LEDS_A : 1];
-CRGB strip_b[NUM_LEDS_B ? NUM_LEDS_B : 1];
-CRGB strip_c[NUM_LEDS_C ? NUM_LEDS_C : 1];
-CRGB strip_d[NUM_LEDS_D ? NUM_LEDS_D : 1];
-CRGB strip_e[NUM_LEDS_E ? NUM_LEDS_E : 1];
+#define STRIP_LENGTH(slot, pin, male, female) ACTIVE_COUNT(male, female),
+constexpr int strip_length[] = { LED_OUTPUTS(STRIP_LENGTH) };
+#undef STRIP_LENGTH
+constexpr int NUM_STRIPS = sizeof(leds) / sizeof(leds[0]);
 
-CRGB* leds[NUM_STRIPS] = {
-  strip_0,
-  strip_1,
-  strip_2,
-  strip_3,
-  strip_4,
-  strip_5,
-  strip_6,
-  strip_7,
-  strip_8,
-  strip_9,
-  strip_a,
-  strip_b,
-  strip_c,
-  strip_d,
-  strip_e
-};
+template<int Pin, int Count>
+typename std::enable_if<(Count > 0)>::type register_strip(CRGB* pixels) {
+  FastLED.addLeds<NEOPIXEL, Pin>(pixels, Count);
+}
 
-uint8_t strip_length[NUM_STRIPS] = {
-  NUM_LEDS_0,
-  NUM_LEDS_1,
-  NUM_LEDS_2,
-  NUM_LEDS_3,
-  NUM_LEDS_4,
-  NUM_LEDS_5,
-  NUM_LEDS_6,
-  NUM_LEDS_7,
-  NUM_LEDS_8,
-  NUM_LEDS_9,
-  NUM_LEDS_A,
-  NUM_LEDS_B,
-  NUM_LEDS_C,
-  NUM_LEDS_D,
-  NUM_LEDS_E
-};
+template<int Pin, int Count>
+typename std::enable_if<(Count == 0)>::type register_strip(CRGB*) {}
 
 void set_indicator_pixels(CRGB color) {
   for (int s = 0; s < NUM_STRIPS; s++)
@@ -418,21 +350,10 @@ void setup() {
 
   Serial.begin(115200);
 
-  if (NUM_LEDS_0 > 0) FastLED.addLeds<NEOPIXEL, DATA_PIN_0>(leds[ 0], NUM_LEDS_0);
-  if (NUM_LEDS_1 > 0) FastLED.addLeds<NEOPIXEL, DATA_PIN_1>(leds[ 1], NUM_LEDS_1);
-  if (NUM_LEDS_2 > 0) FastLED.addLeds<NEOPIXEL, DATA_PIN_2>(leds[ 2], NUM_LEDS_2);
-  if (NUM_LEDS_3 > 0) FastLED.addLeds<NEOPIXEL, DATA_PIN_3>(leds[ 3], NUM_LEDS_3);
-  if (NUM_LEDS_4 > 0) FastLED.addLeds<NEOPIXEL, DATA_PIN_4>(leds[ 4], NUM_LEDS_4);
-  if (NUM_LEDS_5 > 0) FastLED.addLeds<NEOPIXEL, DATA_PIN_5>(leds[ 5], NUM_LEDS_5);
-  if (NUM_LEDS_6 > 0) FastLED.addLeds<NEOPIXEL, DATA_PIN_6>(leds[ 6], NUM_LEDS_6);
-  if (NUM_LEDS_7 > 0) FastLED.addLeds<NEOPIXEL, DATA_PIN_7>(leds[ 7], NUM_LEDS_7);
-  if (NUM_LEDS_8 > 0) FastLED.addLeds<NEOPIXEL, DATA_PIN_8>(leds[ 8], NUM_LEDS_8);
-  if (NUM_LEDS_9 > 0) FastLED.addLeds<NEOPIXEL, DATA_PIN_9>(leds[ 9], NUM_LEDS_9);
-  if (NUM_LEDS_A > 0) FastLED.addLeds<NEOPIXEL, DATA_PIN_A>(leds[10], NUM_LEDS_A);
-  if (NUM_LEDS_B > 0) FastLED.addLeds<NEOPIXEL, DATA_PIN_B>(leds[11], NUM_LEDS_B);
-  if (NUM_LEDS_C > 0) FastLED.addLeds<NEOPIXEL, DATA_PIN_C>(leds[12], NUM_LEDS_C);
-  if (NUM_LEDS_D > 0) FastLED.addLeds<NEOPIXEL, DATA_PIN_D>(leds[13], NUM_LEDS_D);
-  if (NUM_LEDS_E > 0) FastLED.addLeds<NEOPIXEL, DATA_PIN_E>(leds[14], NUM_LEDS_E);
+#define REGISTER_STRIP(slot, pin, male, female) \
+  register_strip<pin, ACTIVE_COUNT(male, female)>(strip_##slot);
+  LED_OUTPUTS(REGISTER_STRIP)
+#undef REGISTER_STRIP
 
   FastLED.setBrightness(128);
   FastLED.setMaxPowerInVoltsAndMilliamps(5, 2000);
@@ -444,6 +365,10 @@ void setup() {
   WiFi.mode(WIFI_STA);
   WiFi.setAutoReconnect(true);
   WiFi.setSleep(true); // Keep the radio associated while using Wi-Fi power saving.
+    WiFi.onEvent([](WiFiEvent_t, WiFiEventInfo_t info) {
+    Serial.printf("Wi-Fi disconnect reason: %u\n",
+                  static_cast<unsigned>(info.wifi_sta_disconnected.reason));
+  }, ARDUINO_EVENT_WIFI_STA_DISCONNECTED);
   WiFi.begin(WIFI_SSID, WIFI_PASS); // DHCP supplies the address.
   if (MQTT_ENABLED &&
       xTaskCreate(mqtt_task, "pikacrew-mqtt", 6144, nullptr, 1, nullptr) != pdPASS) {
@@ -521,7 +446,7 @@ void dmx_symmetric_pattern() {
 
 #ifdef IS_MALE
 
-  for (int i = 0; i < NUM_LEDS; i++) {
+  for (int i = 0; i < MAX_NUM_LEDS; i++) {
     CRGB c = CRGB(
       dmx_color_buffer[3 * i + 0],
       dmx_color_buffer[3 * i + 1],
@@ -535,7 +460,7 @@ void dmx_symmetric_pattern() {
 
 #else // FEMALE
 
-  for (int i = 0; i < NUM_LEDS; i++) {
+  for (int i = 0; i < MAX_NUM_LEDS; i++) {
     CRGB c = CRGB(
       dmx_color_buffer[3 * i + 0],
       dmx_color_buffer[3 * i + 1],
@@ -663,6 +588,22 @@ void show_status_report(bool live, bool standby) {
 
 void loop() {
   const uint32_t now = millis();
+      static uint32_t last_wifi_report_ms = 0;
+  static bool wifi_was_connected = false;
+  const auto wifi_status = WiFi.status();
+
+  if (wifi_status == WL_CONNECTED) {
+    if (!wifi_was_connected) {
+      Serial.print("PikaCrew Wi-Fi connected at ");
+      Serial.println(WiFi.localIP());
+    }
+    wifi_was_connected = true;
+  } else if (wifi_was_connected || now - last_wifi_report_ms >= 20000UL) {
+    Serial.printf("PikaCrew Wi-Fi not connected (status %d). Still retrying.\n",
+                  static_cast<int>(wifi_status));
+    wifi_was_connected = false;
+    last_wifi_report_ms = now;
+  }
   update_listeners(now);
   check_serial_status_command();
 
